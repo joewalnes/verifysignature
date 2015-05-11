@@ -1,0 +1,239 @@
+#!/usr/bin/env python
+
+# 2015, Joe Walnes, Sneaky Squid
+
+# See http://ed25519.cr.yp.to/
+
+from __future__ import print_function
+from binascii import hexlify, unhexlify
+from os import urandom
+from sys import argv, exit, stderr
+
+def get_public_key(secret_key):
+    """
+    Given a hex encoded secret_key, return the hex encoded public_key.
+    """
+    return hexlify(_publickey(unhexlify(secret_key)))
+
+def sign(secret_key, message):
+    """
+    Signs message with secret_key.
+
+    secret_key should be hex encoed. Resulting signature will be hex encoded.
+    """
+    sk = unhexlify(secret_key)
+    return hexlify(_signature(message, sk, _publickey(sk)))
+
+def verify(public_key, signature, message):
+    """
+    Verify message signature has been generate from public key.
+
+    Raises exception if invalid.
+
+    public_key and signature should be hex encoded.
+    """
+    _checkvalid(unhexlify(signature), message, unhexlify(public_key))
+
+def main():
+    """
+    Command line utility that takes a secret key and file and will output
+    the public key and signature.
+
+    Run with no args for help.
+    """
+
+    def die_with_usage():
+        print(_help_msg, file=stderr)
+        exit(1)
+
+    def load(file_name):
+        with open(file_name, 'rb') as f:
+            return f.read()
+
+    if len(argv) < 2:
+        die_with_usage()
+
+    cmd = argv[1]
+
+    if cmd == 'gen-secret':
+        print(hexlify(urandom(64)))
+
+    elif cmd == 'pub-key':
+        if len(argv) < 3:
+            die_with_usage()
+        secret_key = argv[2]
+        print(get_public_key(secret_key))
+
+    elif cmd == 'sign':
+        if len(argv) < 4:
+            die_with_usage()
+        secret_key = argv[2]
+        file_name = argv[3]
+        message = load(file_name)
+        signature = sign(secret_key, message)
+        print(signature)
+
+    elif cmd == 'verify':
+        if len(argv) < 5:
+            die_with_usage()
+        public_key = argv[2]
+        signature = argv[3]
+        file_name = argv[4]
+        message = load(file_name)
+        try:
+            verify(public_key, signature, message)
+            print('ok')
+        except:
+            print('ERROR: failed signature verification', file=stderr)
+            exit(1)
+
+    else:
+        die_with_usage()
+
+_help_msg = """
+
+Usage:
+
+
+  %(prog)s gen-secret
+
+      Generates a new secret key. Keep this safe. Don't share it.
+
+
+  %(prog)s pub-key SECRETKEY
+
+      Given a secret key, extract the public key, which can be publicly
+      shared and used to verify signed messages.
+
+
+  %(prog)s sign SECRETKEY PATH
+
+      Given a secret key and a path to a file, generate a signature that
+      can by a third party, in conjuction with a public key to verify
+      the authenticity of the file.
+
+
+  %(prog)s verify PUBLICKEY SIGNATURE PATH
+
+      Given a public key and a signature, verify the authenticity of a file.
+
+
+- 2015, Joe Walnes, Sneaky Squid
+
+""" % {'prog': argv[0]}
+
+### ---------------------------------------------------------------------------
+### Simple Ed25519 implementation from http://ed25519.cr.yp.to/python/ed25519.py
+
+import hashlib
+
+b = 256
+q = 2**255 - 19
+l = 2**252 + 27742317777372353535851937790883648493
+
+def _H(m):
+    return hashlib.sha512(m).digest()
+
+def _expmod(b,e,m):
+  if e == 0: return 1
+  t = _expmod(b,e/2,m)**2 % m
+  if e & 1: t = (t*b) % m
+  return t
+
+def _inv(x):
+  return _expmod(x,q-2,q)
+
+d = -121665 * _inv(121666)
+I = _expmod(2,(q-1)/4,q)
+
+def _xrecover(y):
+  xx = (y*y-1) * _inv(d*y*y+1)
+  x = _expmod(xx,(q+3)/8,q)
+  if (x*x - xx) % q != 0: x = (x*I) % q
+  if x % 2 != 0: x = q-x
+  return x
+
+By = 4 * _inv(5)
+Bx = _xrecover(By)
+B = [Bx % q,By % q]
+
+def _edwards(P,Q):
+  x1 = P[0]
+  y1 = P[1]
+  x2 = Q[0]
+  y2 = Q[1]
+  x3 = (x1*y2+x2*y1) * _inv(1+d*x1*x2*y1*y2)
+  y3 = (y1*y2+x1*x2) * _inv(1-d*x1*x2*y1*y2)
+  return [x3 % q,y3 % q]
+
+def _scalarmult(P,e):
+  if e == 0: return [0,1]
+  Q = _scalarmult(P,e/2)
+  Q = _edwards(Q,Q)
+  if e & 1: Q = _edwards(Q,P)
+  return Q
+
+def _encodeint(y):
+  bits = [(y >> i) & 1 for i in range(b)]
+  return ''.join([chr(sum([bits[i * 8 + j] << j for j in range(8)])) for i in range(b/8)])
+
+def _encodepoint(P):
+  x = P[0]
+  y = P[1]
+  bits = [(y >> i) & 1 for i in range(b - 1)] + [x & 1]
+  return ''.join([chr(sum([bits[i * 8 + j] << j for j in range(8)])) for i in range(b/8)])
+
+def _bit(h,i):
+  return (ord(h[i/8]) >> (i%8)) & 1
+
+def _publickey(sk):
+  h = _H(sk)
+  a = 2**(b-2) + sum(2**i * _bit(h,i) for i in range(3,b-2))
+  A = _scalarmult(B,a)
+  return _encodepoint(A)
+
+def _Hint(m):
+  h = _H(m)
+  return sum(2**i * _bit(h,i) for i in range(2*b))
+
+def _signature(m,sk,pk):
+  h = _H(sk)
+  a = 2**(b-2) + sum(2**i * _bit(h,i) for i in range(3,b-2))
+  r = _Hint(''.join([h[i] for i in range(b/8,b/4)]) + m)
+  R = _scalarmult(B,r)
+  S = (r + _Hint(_encodepoint(R) + pk + m) * a) % l
+  return _encodepoint(R) + _encodeint(S)
+
+def _isoncurve(P):
+  x = P[0]
+  y = P[1]
+  return (-x*x + y*y - 1 - d*x*x*y*y) % q == 0
+
+def _decodeint(s):
+  return sum(2**i * _bit(s,i) for i in range(0,b))
+
+def _decodepoint(s):
+  y = sum(2**i * _bit(s,i) for i in range(0,b-1))
+  x = _xrecover(y)
+  if x & 1 != _bit(s,b-1): x = q-x
+  P = [x,y]
+  if not _isoncurve(P): raise Exception("decoding point that is not on curve")
+  return P
+
+def _checkvalid(s,m,pk):
+  if len(s) != b/4: raise Exception("signature length is wrong")
+  if len(pk) != b/8: raise Exception("public-key length is wrong")
+  R = _decodepoint(s[0:b/8])
+  A = _decodepoint(pk)
+  S = _decodeint(s[b/8:b/4])
+  h = _Hint(_encodepoint(R) + pk + m)
+  if _scalarmult(B,S) != _edwards(R,_scalarmult(A,h)):
+    raise Exception("signature does not pass verification")
+
+
+
+
+### ---------------------------------------------------------------------------
+
+if __name__ == '__main__':
+    main()
