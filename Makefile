@@ -4,8 +4,9 @@ run: example
 	./example
 .PHONY: run
 
-example: example.c verifysignature.c
+example: example.o verifysignature.o
+example.o verifysignature.o: verifysignature.h
 
 clean:
-	rm -f example
+	rm -f example *.o
 .PHONY: clean
