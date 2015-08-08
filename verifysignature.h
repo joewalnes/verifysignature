@@ -2,6 +2,10 @@
 
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 
 /*
@@ -32,3 +36,7 @@ int verify_signature(const char *public_key_hex,
                      const char *signature_hex,
                      const unsigned char *message,
                      const size_t message_len);
+
+#ifdef __cplusplus
+}
+#endif
