@@ -21,7 +21,7 @@ as a hex string, allowing it to easily be embedded in code, copy/pasted, emailed
 etc.
 
 The only files that need to be included in your project are verifysignature.h
-and verifysignature.h
+and verifysignature.c
 
 
 ----------------------
