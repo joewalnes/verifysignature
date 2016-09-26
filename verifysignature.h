@@ -1,7 +1,10 @@
 /* 2015, Joe Walnes, Sneaky Squid */
 
-#ifndef verifysignature_H
-#define verifysignature_H
+#pragma once
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <stddef.h>
 
@@ -34,4 +37,6 @@ int verify_signature(const char *public_key_hex,
                      const unsigned char *message,
                      const size_t message_len);
 
+#ifdef __cplusplus
+}
 #endif

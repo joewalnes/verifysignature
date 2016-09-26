@@ -1,3 +1,5 @@
+*.o
 *.pyc
 *.swp
 example
+example-cpp
